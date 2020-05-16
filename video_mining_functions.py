@@ -231,6 +231,13 @@ def coco_loop(input_path, output_path,name,skip_frame = 10):
     except:
        return  sys.exc_info()[1]
 
+#get blurriness of grayscaled image
+def image_blurriness(image):
+    #convert image to grayscale
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #get variance of Laplacian as measure for blurriness
+    return cv2.Laplacian(image, cv2.CV_64F).var()
+
 #get colorfulness from image in RGB, frame needs to be passed
 def image_colorfulness(image):
     # using Hasler, David ; Süsstrunk, Sabine, 2003: Measuring colourfulness in natural images
