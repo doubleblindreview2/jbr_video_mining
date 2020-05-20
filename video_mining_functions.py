@@ -231,6 +231,62 @@ def coco_loop(input_path, output_path,name,skip_frame = 10):
     except:
        return  sys.exc_info()[1]
 
+#get visual variance as similiarity of image embeddings
+def get_visual_variance(input_dir, output_dir, name):
+    try:
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        resnet152 = models.resnet152(pretrained=True)
+        modules = list(resnet152.children())[:-1] # get list of all but last layer from resnet152
+        resnet152 = nn.Sequential(*modules) #recompose list of layers to neural net
+        resnet152.to(device)
+        for p in resnet152.parameters(): #set all layers in evaluation mode (no derivatives required)
+            p.requires_grad = False
+        data_transforms = {
+            'embed': transforms.Compose([
+                transforms.Resize((224,224)),
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
+            }
+
+        def norml2(vec):# input N by F
+            F = vec.size(1)
+            w = torch.sqrt((torch.t(vec.pow(2).sum(1).repeat(F,1))))
+            return vec.div(w)
+
+        dataset = {'embed' : datasets.ImageFolder(input_dir, data_transforms['embed'])}
+        dataloader = {'embed': torch.utils.data.DataLoader(dataset['embed'], batch_size = batch_size, shuffle=False, num_workers=num_workers)}
+
+        outputs = torch.empty(0, 2048).to(device)
+        for inputs, _ in dataloader['embed']:
+            inputs = inputs.to(device)
+            output = resnet152(inputs)
+            output = torch.reshape(output,output.shape[:2])
+            outputs = torch.cat((outputs,output), 0)
+
+        nvec = norml2(outputs)
+        D = nvec.mm(torch.t(nvec))
+        D = D.to('cpu').numpy()
+        neighbor_sim = np.diag(D,k=1)
+        n = D.shape[0]
+        D_mean = (D.mean()*n-1)/(n-1)
+        D_var = np.sqrt((np.square(D).sum()-2*D_mean*(D.sum())+D_mean**2*n**2-n*(1-D_mean)**2)/(n*(n-1)))
+
+        np.savetxt(output_dir + name + '_embeddings.csv',outputs.to('cpu').numpy(),delimiter=',')
+        np.savetxt(output_dir + name + '_similarities.csv',D,delimiter=',')
+        np.savetxt(output_dir + name + '_neighbor_similarities.csv', neighbor_sim, delimiter=",")
+
+        with open('/content/wendys/aggregates_test.csv','w') as f:
+          f.write('Variable,Value\n')
+          f.write('Average_Scene2Scene_Similarity,' +str(neighbor_sim.mean()) + '\n')
+          f.write('Variance_Scene2Scene_Similarity,' +str(neighbor_sim.var()) + '\n')
+          f.write('Average_Scenes_Similarity,' +str(D_mean) + '\n')
+          f.write('Variance_Scenes_Similarity,' +str(D_var))
+        return True
+    except:
+        except:
+          return sys.exc_info()[1]
+    
 #get blurriness of grayscaled image
 def image_blurriness(image):
     #convert image to grayscale
